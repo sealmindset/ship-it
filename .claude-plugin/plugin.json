@@ -1,0 +1,19 @@
+{
+  "name": "ship-it",
+  "version": "1.0.0",
+  "description": "Guided delivery skill that helps new developers ship code to production through simple yes/no questions — no DevOps knowledge required.",
+  "author": {
+    "name": "DevOps_Skills"
+  },
+  "homepage": "https://github.com/your-org/DevOps_Skills",
+  "repository": "https://github.com/your-org/DevOps_Skills",
+  "license": "MIT",
+  "keywords": [
+    "devops",
+    "ci-cd",
+    "deployment",
+    "beginner-friendly",
+    "github-actions",
+    "shipping"
+  ]
+}

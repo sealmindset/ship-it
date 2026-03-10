@@ -1,0 +1,51 @@
+name: 'Ship It'
+description: 'Guided delivery skill that helps new developers ship code to production through simple yes/no questions — no DevOps knowledge required.'
+author: 'DevOps_Skills'
+
+branding:
+  icon: 'package'
+  color: 'green'
+
+inputs:
+  github-token:
+    description: 'GitHub token for API access (PR creation, labels, status checks)'
+    required: true
+    default: ${{ github.token }}
+  mode:
+    description: 'How the skill was triggered. "interactive" for CLI Q&A, "ci" for automated PR pipeline behavior.'
+    required: false
+    default: 'ci'
+  intent:
+    description: 'Override intent classification. Only used in CI mode when the label is already applied. One of: experiment, shareable, prod-ready.'
+    required: false
+    default: ''
+  dev-environment:
+    description: 'GitHub environment name for dev deployments.'
+    required: false
+    default: 'dev'
+  prod-environment:
+    description: 'GitHub environment name for production deployments (should have required reviewers configured).'
+    required: false
+    default: 'production'
+  working-directory:
+    description: 'Directory to run the skill in. Defaults to repo root.'
+    required: false
+    default: '.'
+
+outputs:
+  intent:
+    description: 'The classified intent: experiment, shareable, or prod-ready'
+  pr-url:
+    description: 'URL of the created or updated pull request'
+  pr-number:
+    description: 'Number of the created or updated pull request'
+  blockers-found:
+    description: 'Whether hard blockers were detected (true/false)'
+  blocker-summary:
+    description: 'Plain-language summary of any blockers found'
+  deploy-target:
+    description: 'Where the artifact should deploy based on intent: none, dev, or dev+prod'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

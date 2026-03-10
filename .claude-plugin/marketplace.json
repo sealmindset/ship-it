@@ -1,0 +1,26 @@
+{
+  "name": "devops-skills",
+  "owner": {
+    "name": "DevOps_Skills"
+  },
+  "metadata": {
+    "description": "Guided DevOps delivery skills for developers who want to ship code without learning pipelines.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "ship-it",
+      "source": ".",
+      "description": "Walk through shipping your code to production with simple yes/no questions. Handles intent classification, blocker detection, PR creation, pipeline setup, and deployment — no DevOps knowledge required.",
+      "version": "1.0.0",
+      "category": "development-workflows",
+      "tags": [
+        "devops",
+        "ci-cd",
+        "deployment",
+        "beginner",
+        "github-actions"
+      ]
+    }
+  ]
+}
