@@ -103,7 +103,7 @@ on:
 
 jobs:
   ship-it:
-    uses: SleepNumberInc/sleep-number-claude-code-plugins/.github/workflows/ship-it-pipeline.yml@main
+    uses: {ORG}/{REPO}/.github/workflows/ship-it-pipeline.yml@main
     with:
       environment-dev: dev
       environment-prod: prd
