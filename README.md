@@ -262,4 +262,4 @@ npm run lint
 
 ## License
 
-MIT
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) -- free to use, share, and adapt with attribution.
