@@ -11,9 +11,9 @@ const INTENT_LABELS = {
 };
 
 const INTENT_DESCRIPTIONS = {
-  [INTENTS.EXPERIMENT]: "This is just for you right now. I'll keep things simple — no heavy process.",
-  [INTENTS.SHAREABLE]: "Other people will see this, so I'll set up a clean pull request and run some basic checks.",
-  [INTENTS.PROD_READY]: "This is heading to production. I'll make sure all the safety checks are in place and set up approvals."
+  [INTENTS.EXPERIMENT]: "This is just for you right now. I'll keep things simple.",
+  [INTENTS.SHAREABLE]: "Other people will see this, so I'll set things up cleanly.",
+  [INTENTS.PROD_READY]: "This is heading to production. I'll make sure everything is in place."
 };
 
 const INTENT_DEPLOY_SUMMARY = {

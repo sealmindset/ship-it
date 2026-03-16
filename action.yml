@@ -31,6 +31,10 @@ inputs:
     description: 'Directory to run the skill in. Defaults to repo root.'
     required: false
     default: '.'
+  arguments:
+    description: 'Arguments passed from /ship-it command (e.g., "save" for save mode).'
+    required: false
+    default: ''
 
 outputs:
   intent:

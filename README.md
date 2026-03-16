@@ -49,7 +49,7 @@ When used on a project built by [/make-it](https://github.com/sealmindset/make-i
 
 `/ship-it` also works standalone on any GitHub project -- it just asks a few extra questions.
 
-See [docs/handoff.md](docs/handoff.md) for the full merge logic.
+See [docs/handoff.md](docs/handoff.md) for the full merge logic and [docs/walkthrough.md](docs/walkthrough.md) for the end-to-end user experience.
 
 ## Prerequisites
 
@@ -282,12 +282,14 @@ src/
   intent.js                   # Intent classification (experiment/shareable/prod-ready)
   blocker-scan.js             # Scans for merge conflicts, failing checks, issues
   pr-builder.js               # Creates/updates PRs with app details, infra status, checklists
-  prompt-flow.js              # Interactive CLI flow (skips questions when make-it context exists)
+  prompt-flow.js              # Ship/save/re-run modes, branch creation, .gitignore gen
   workflow-gen.js              # Generates AWS/Azure/placeholder workflows from config
   auth-handler.js              # Translates auth errors to plain language
+  gitignore-gen.js            # Generates .gitignore per detected stack
   __tests__/
     auth-handler.test.js
     config-loader.test.js     # Config merge logic tests
+    gitignore-gen.test.js     # .gitignore generation tests
     intent.test.js
 templates/
   ship-it.yml                 # Generic .ship-it.yml template (3 sections)
@@ -299,6 +301,7 @@ templates/
 docs/
   devops-guide.md             # DevOps onboarding guide (how to fill in .ship-it.yml)
   handoff.md                  # make-it to ship-it merge logic
+  walkthrough.md              # End-to-end UX walkthrough (what the developer sees)
   devops_skill.md             # Detailed skill specification
 action.yml                    # GitHub Action definition
 package.json                  # Node.js dependencies
