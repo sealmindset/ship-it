@@ -13,11 +13,12 @@ The developer sees two sentences of output. Everything else happens silently.
 
 ### How It Works
 
-1. **Silent preflight** -- Checks git repo, GitHub auth, current branch, `.ship-it.yml` config, open PRs, uncommitted changes, and project type. All in one command.
-2. **Branch + commit + push** -- Creates a branch if on main, stages changes, commits, pushes.
-3. **Workflow generation** -- If no CI/CD workflow exists, generates a lightweight caller workflow referencing the org's shared reusable workflow.
-4. **PR creation** -- Creates a labeled PR with a plain-language description, reviewer assignment, and a go-live checklist for infrastructure needs.
-5. **Done** -- Reports back with the PR URL.
+1. **Silent preflight** -- Checks git repo, GitHub auth, current branch, `.ship-it.yml` config, `app-context.json` (from /make-it), open PRs, uncommitted changes, and project type. All in one command.
+2. **Intent classification** -- Three yes/no questions determine if this is an experiment, shareable, or production-ready.
+3. **Branch + commit + push** -- Creates a branch if on main, stages changes, commits, pushes.
+4. **Workflow generation** -- If no CI/CD workflow exists, generates one based on available infrastructure config.
+5. **PR creation** -- Creates a labeled PR with app details, reviewer assignment, and a smart go-live checklist.
+6. **Done** -- Reports back with the PR URL.
 
 ### Three Modes
 
@@ -29,13 +30,26 @@ The developer sees two sentences of output. Everything else happens silently.
 
 ### Intent Classification
 
-When running as a GitHub Action in CI mode, the skill classifies PRs into three intent levels:
+Three yes/no questions classify every deployment:
 
 | Intent | Label | Deploy Target | Meaning |
 |--------|-------|---------------|---------|
 | Experiment | `intent:experiment` | None | "Just trying something out" |
 | Shareable | `intent:shareable` | Dev only | "Others should see this" |
 | Prod-ready | `intent:prod-ready` | Dev + Prod | "This is ready for real users" |
+
+## Works With /make-it
+
+When used on a project built by [/make-it](https://github.com/sealmindset/make-it), `/ship-it` automatically reads `app-context.json` and `.make-it-state.md` to:
+
+- Skip app-type and stack questions (already known)
+- Auto-generate the `app` section of `.ship-it.yml`
+- Create a smart prerequisites checklist (pre-checking items make-it already configured)
+- Populate the PR body with app details (stack, services, auth, database)
+
+`/ship-it` also works standalone on any GitHub project -- it just asks a few extra questions.
+
+See [docs/handoff.md](docs/handoff.md) for the full merge logic.
 
 ## Prerequisites
 
@@ -91,7 +105,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-Or reference the shared reusable workflow:
+Or reference a shared reusable workflow:
 
 ```yaml
 name: ship-it pipeline
@@ -112,34 +126,93 @@ jobs:
 
 ## Configuration
 
-### `.ship-it.yml` (optional)
+### `.ship-it.yml`
 
-Drop this file in the root of any repo. DevOps owns it. If missing, `/ship-it` uses sensible defaults.
+Drop this file in the root of any repo. It has three sections with different owners:
 
 ```yaml
-# Reviewers auto-assigned to every production PR
-reviewers:
-  - team-lead-username
+# APP -- What is being deployed (auto-populated by /make-it, or filled by developer)
+app:
+  name: "TaskHub"
+  slug: "task-hub"
+  description: "Team task management app"
+  stack: "fastapi-nextjs"
+  project_type: "web-app"
+  services:
+    - name: backend
+      dockerfile: backend/Dockerfile
+      port: 8000
+      health_check: /health
+      cpu: 512
+      memory: 1024
+    - name: frontend
+      dockerfile: frontend/Dockerfile
+      port: 3000
+      health_check: /
+      cpu: 256
+      memory: 512
+  database:
+    engine: postgresql
+    version: "16"
+  auth:
+    provider: oidc
 
-# GitHub environment names (configure protection rules in repo settings)
-environments:
-  dev: dev
-  production: production
+# INFRA -- Where and how to deploy (filled by DevOps)
+infra:
+  provider: aws
+  aws:
+    region: us-east-1
+    account_id: "123456789012"
+    ecr_registry: "123456789012.dkr.ecr.us-east-1.amazonaws.com"
+    vpc_id: "vpc-abc123"
+    private_subnets: ["subnet-abc123", "subnet-def456"]
+    public_subnets: ["subnet-ghi789", "subnet-jkl012"]
+    ecs:
+      cluster_name: "apps-cluster"
+      execution_role_arn: "arn:aws:iam::123456789012:role/ecsTaskExecutionRole"
+      task_role_arn: "arn:aws:iam::123456789012:role/ecsTaskRole"
+    rds:
+      instance_class: db.t3.micro
+      allocated_storage: 20
+      multi_az: false
+    alb:
+      certificate_arn: "arn:aws:acm:us-east-1:123456789012:certificate/abc-123"
+      health_check_path: /health
+    dns:
+      hosted_zone_id: "Z1234567890"
+      domain: "apps.example.com"
+    secrets:
+      prefix: /make-it
 
-# Path to existing CI/CD workflow (if set, /ship-it won't generate one)
-# workflow: .github/workflows/deploy.yml
-
-# Go-live checklist items added to every production PR
-prerequisites:
-  - "Does this app need users to log in? (SSO / App registration)"
-  - "Does this need a secure web address? (SSL certificate)"
-  - "Who should have access in production? (Permissions / RBAC)"
-  - "Does this need a URL people can visit? (DNS setup)"
-  - "Does this need to talk to internal systems? (Network / firewall)"
-
-# Default PR title if developer doesn't provide one
-# description: "My application"
+# DEPLOYMENT -- How the pipeline behaves
+deployment:
+  environments:
+    dev: dev
+    staging: staging
+    production: production
+  reviewers:
+    - devops-lead
+    - team-lead
+  prerequisites:
+    - "Does this app need users to log in? (SSO / App registration)"
+    - "Does this need a secure web address? (SSL certificate)"
+    - "Who should have access in production? (Permissions / RBAC)"
+    - "Does this need a URL people can visit? (DNS setup)"
+    - "Does this need to talk to internal systems? (Network / firewall)"
+  strategy: rolling
+  rollback: true
 ```
+
+**Merge priority** (highest wins):
+1. `.ship-it.yml` values (DevOps overrides everything)
+2. `app-context.json` values (from /make-it)
+3. Auto-detected values (stack detection, git context)
+4. Sensible defaults
+
+If `.ship-it.yml` is missing, `/ship-it` uses sensible defaults for everything.
+If only `app` is present (no `infra`), `/ship-it` creates the PR but marks deployment as "pending DevOps configuration."
+
+See [templates/ship-it.yml](templates/ship-it.yml) for the full template with comments.
 
 ### Action Inputs
 
@@ -174,10 +247,10 @@ claude
 ```
 
 Output:
-> **Done!** Your code is on its way to production.
+> **Done!** Your code is on its way.
 > https://github.com/your-org/your-repo/pull/42
 >
-> The team will review it and let you know if they have any questions. Otherwise, they'll let you know when it's live.
+> The team will review it and let you know when it's live.
 
 ### Save Work in Progress
 
@@ -215,12 +288,12 @@ src/
     auth-handler.test.js
     intent.test.js
 templates/
-  ship-it.yml                 # Example .ship-it.yml configuration
+  ship-it.yml                 # Example .ship-it.yml configuration (3 sections)
   checklist-prod.md           # Production go-live checklist template
   pr-description.md           # PR description template
   workflow.yml                # GitHub Actions workflow template
 docs/
-  RFC_2024-001_*.md           # RFC specification
+  handoff.md                  # make-it to ship-it merge logic
   devops_skill.md             # Detailed skill documentation
 action.yml                    # GitHub Action definition
 package.json                  # Node.js dependencies
@@ -232,6 +305,7 @@ package.json                  # Node.js dependencies
 - Merge conflicts -- stops, explains in plain language, offers to help. Never force-pushes.
 - Existing workflow files -- never overwrites
 - Missing `.ship-it.yml` -- uses defaults, never blocks
+- Missing `infra` section -- creates PR but marks deployment as pending. Never blocks.
 - Already merged / nothing to ship -- tells you and stops
 - Never leaves the repo in a broken state
 - Never shows raw git/gh output
@@ -253,12 +327,13 @@ npm run build
 npm run lint
 ```
 
-## Related Skills
+## Related Projects
 
-| Skill | Purpose | Repo |
-|-------|---------|------|
+| Project | Purpose | Repo |
+|---------|---------|------|
 | `/make-it` | Build a new app from idea to working code | [sealmindset/make-it](https://github.com/sealmindset/make-it) |
-| `/resume-it` | Continue working on an existing app (inside make-it) | [sealmindset/make-it](https://github.com/sealmindset/make-it) |
+| `/ship-it` | Deploy code to production (this repo) | [sealmindset/ship-it](https://github.com/sealmindset/ship-it) |
+| `harness-it` | Test harness for validating make-it + ship-it integration | [sealmindset/harness-it](https://github.com/sealmindset/harness-it) |
 
 ## License
 
