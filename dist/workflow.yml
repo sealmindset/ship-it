@@ -1,0 +1,55 @@
+name: ship-it pipeline
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  build-and-validate:
+    name: Build & Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: {{BUILD_CMD}}
+
+      - name: Lint
+        run: {{LINT_CMD}}
+        continue-on-error: ${{ !contains(github.event.pull_request.labels.*.name, 'intent:prod-ready') }}
+
+      - name: Security scan
+        run: {{SECURITY_CMD}}
+        continue-on-error: ${{ !contains(github.event.pull_request.labels.*.name, 'intent:prod-ready') }}
+
+  deploy-dev:
+    name: Deploy to Dev
+    needs: build-and-validate
+    if: |
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: {{DEV_ENV}}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to dev
+        run: echo "Deploy to dev — configure with your deployment target"
+
+  deploy-prod:
+    name: Deploy to Production
+    needs: deploy-dev
+    if: |
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: {{PROD_ENV}}
+      # Configure required reviewers in GitHub repo Settings > Environments
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to production
+        run: echo "Deploy to production — configure with your deployment target"
