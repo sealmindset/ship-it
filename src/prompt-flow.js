@@ -2,13 +2,19 @@ const { classifyIntent, getIntentDescription, getDeploySummary, getIntentLabel }
 const { scanForBlockers } = require('./blocker-scan');
 const { createOrUpdatePR } = require('./pr-builder');
 const { ensureWorkflow } = require('./workflow-gen');
+const { loadConfig, generateShipItYml } = require('./config-loader');
 const readline = require('readline');
+const fs = require('fs');
+const path = require('path');
 
 /**
  * Runs the full interactive CLI Q&A flow.
- * This is the heart of /ship-it — it walks the developer through
+ * This is the heart of /ship-it -- it walks the developer through
  * readiness checks, blocker detection, intent classification, and
  * the final push, using plain-language questions.
+ *
+ * When make-it context exists (app-context.json), it skips app
+ * questions and auto-populates the config.
  */
 async function runInteractiveFlow({ octokit, context, core }) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -16,23 +22,38 @@ async function runInteractiveFlow({ octokit, context, core }) {
 
   const { owner, repo } = context.repo;
   const branch = context.ref?.replace('refs/heads/', '') || 'unknown';
+  const workingDir = core.getInput('working-directory') || '.';
 
   try {
+    // --- Load config (merge .ship-it.yml + app-context.json + auto-detect) ---
+    const config = loadConfig({ workingDir });
+
     // --- Step 1: Greeting ---
     print(`\nHey! I'm here to help you get your code shipped.`);
     print(`I can see you're working on ${owner}/${repo} on the "${branch}" branch.`);
+
+    if (config.context.hasMakeIt) {
+      print(`I found your app details from /make-it -- I already know about ${config.app.name || 'your app'}.`);
+    }
+
     print(`Let's figure out what needs to happen next.\n`);
 
     // --- Step 2: Readiness Questions ---
-    const ready = await askReadinessQuestions(ask);
-    if (!ready.canProceed) {
-      print(`\nSounds like there's still some work to do. No rush — run /ship-it again when you're ready.\n`);
-      rl.close();
-      return;
+    // Skip readiness questions if build-verify passed
+    let ready = { canProceed: true };
+    if (!config.context.buildVerified) {
+      ready = await askReadinessQuestions(ask);
+      if (!ready.canProceed) {
+        print(`\nSounds like there's still some work to do. No rush -- run /ship-it again when you're ready.\n`);
+        rl.close();
+        return;
+      }
+    } else {
+      print(`Your app passed all checks from /make-it -- skipping readiness questions.\n`);
     }
 
     // --- Step 3: Blocker Scan ---
-    print(`\nChecking for anything that might get in the way...`);
+    print(`Checking for anything that might get in the way...`);
     const pr = context.payload?.pull_request;
     let blockers = { hard: [], soft: [], hasHardBlockers: false, summary: 'No blockers found.' };
 
@@ -49,7 +70,7 @@ async function runInteractiveFlow({ octokit, context, core }) {
     }
 
     if (blockers.soft.length > 0) {
-      print(`\nHeads up — a few things to be aware of:`);
+      print(`\nHeads up -- a few things to be aware of:`);
       blockers.soft.forEach(b => print(`  - ${b}`));
       const proceed = await ask(`\nWant to keep going anyway? (yes/no) `);
       if (normalizeAnswer(proceed) === false) {
@@ -58,13 +79,24 @@ async function runInteractiveFlow({ octokit, context, core }) {
         return;
       }
     } else {
-      print(`All clear — no blockers found.`);
+      print(`All clear -- no blockers found.`);
     }
 
     // --- Step 4: Intent Classification ---
-    print(`\nNow I need to understand what kind of change this is.\n`);
-    const intentAnswers = await askIntentQuestions(ask);
-    const intent = classifyIntent(intentAnswers);
+    // Shortcut: if build-verify passed and user said prod-ready, skip intent questions
+    let intent;
+    let intentAnswers = {};
+
+    if (config.context.prodReady) {
+      intent = 'prod-ready';
+      intentAnswers = { othersUse: true, realData: true, impactIfBroken: true };
+      print(`\nYour app was marked as production-ready -- setting up the full safety treatment.`);
+    } else {
+      print(`\nNow I need to understand what kind of change this is.\n`);
+      intentAnswers = await askIntentQuestions(ask);
+      intent = classifyIntent(intentAnswers);
+    }
+
     const intentDesc = getIntentDescription(intent);
     const deploySummary = getDeploySummary(intent);
 
@@ -73,19 +105,39 @@ async function runInteractiveFlow({ octokit, context, core }) {
     deploySummary.forEach(s => print(`  - ${s}`));
 
     // --- Step 5: Collect App Info ---
-    print('');
-    const appInfo = await collectAppInfo(ask, { branch, ...intentAnswers });
+    // Skip app questions if make-it context exists
+    let appInfo;
+    if (config.context.hasMakeIt) {
+      print(`\nUsing your app details from /make-it -- no extra questions needed.`);
+      appInfo = {
+        description: config.app.description || config.app.name,
+        appType: config.app.projectType || 'Web app',
+        runtime: 'Container',
+        reviewer: config.deployment.reviewers[0] || 'TBD',
+        branch,
+        ...intentAnswers
+      };
+    } else {
+      print('');
+      appInfo = await collectAppInfo(ask, { branch, ...intentAnswers });
+    }
+
+    // --- Step 5A: Auto-generate .ship-it.yml if needed ---
+    if (!config.context.hasShipItYml && config.context.hasMakeIt) {
+      print(`\nGenerating deployment config from your app details...`);
+      const ymlContent = generateShipItYml(config);
+      fs.writeFileSync(path.join(workingDir, '.ship-it.yml'), ymlContent);
+      print(`  Created .ship-it.yml`);
+    }
 
     // --- Step 5B: Workflow Generation ---
     print(`\nSetting things up...`);
-    const devEnv = core.getInput('dev-environment') || 'dev';
-    const prodEnv = core.getInput('prod-environment') || 'production';
-    const wf = await ensureWorkflow({ octokit, owner, repo, branch, devEnv, prodEnv });
+    const wf = await ensureWorkflow({ octokit, owner, repo, branch, config });
     print(`  ${wf.message}`);
 
     // --- Step 5C: Create PR ---
     const prResult = await createOrUpdatePR({
-      octokit, owner, repo, branch, baseBranch: 'main', intent, appInfo
+      octokit, owner, repo, branch, baseBranch: 'main', intent, appInfo, config
     });
 
     // --- Step 6: Summary ---
@@ -95,6 +147,9 @@ async function runInteractiveFlow({ octokit, context, core }) {
     deploySummary.forEach(s => print(`  - ${s}`));
     if (intent === 'prod-ready') {
       print(`  - Added a checklist of things to handle before go-live`);
+    }
+    if (!config.infra.configured) {
+      print(`  - Note: deployment steps are placeholders until DevOps fills in the infra section`);
     }
     print(`\nYou're all set. When the PR is approved and merged, the automation takes it from there.\n`);
 
@@ -128,8 +183,8 @@ async function askReadinessQuestions(ask) {
 }
 
 async function askIntentQuestions(ask) {
-  const q1 = await ask('Will anyone else use this besides you — even just to look at it or try it out? (yes/no) ');
-  const q2 = await ask('Does it touch real data — like actual customer info, company records, or anything that\'s not made-up test data? (yes/no) ');
+  const q1 = await ask('Will anyone else use this besides you -- even just to look at it or try it out? (yes/no) ');
+  const q2 = await ask('Does it touch real data -- like actual customer info, company records, or anything that\'s not made-up test data? (yes/no) ');
   const q3 = await ask('If this broke, would anyone besides you notice or be affected? (yes/no) ');
 
   return {
@@ -168,7 +223,7 @@ function normalizeAnswer(answer) {
   const a = (answer || '').trim().toLowerCase();
   if (['yes', 'y', 'yeah', 'yep', 'sure', 'true'].includes(a)) return true;
   if (['no', 'n', 'nah', 'nope', 'false'].includes(a)) return false;
-  return null; // ambiguous — treat as "not sure"
+  return null;
 }
 
 function print(msg) {

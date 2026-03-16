@@ -6,6 +6,7 @@ const { createOrUpdatePR } = require('./pr-builder');
 const { ensureWorkflow } = require('./workflow-gen');
 const { handleAuthError } = require('./auth-handler');
 const { runInteractiveFlow } = require('./prompt-flow');
+const { loadConfig } = require('./config-loader');
 
 async function run() {
   try {
@@ -19,7 +20,7 @@ async function run() {
       return;
     }
 
-    // CI mode — runs as part of a GitHub Actions workflow on PR events
+    // CI mode -- runs as part of a GitHub Actions workflow on PR events
     await runCIMode({ octokit, context, core });
   } catch (error) {
     if (error.status === 401 || error.status === 403) {
@@ -34,6 +35,10 @@ async function run() {
 async function runCIMode({ octokit, context, core }) {
   const { owner, repo } = context.repo;
   const intentOverride = core.getInput('intent');
+  const workingDir = core.getInput('working-directory') || '.';
+
+  // Load merged config
+  const config = loadConfig({ workingDir });
 
   // If triggered by a PR event, read the PR details
   const prNumber = context.payload.pull_request?.number;
@@ -78,8 +83,13 @@ async function runCIMode({ octokit, context, core }) {
   };
   core.setOutput('deploy-target', deployTargets[intent] || 'none');
 
+  // Log config context
+  if (config.context.hasMakeIt) {
+    core.info(`App: ${config.app.name} (from /make-it)`);
+  }
   core.info(`Intent: ${intent}`);
   core.info(`Deploy target: ${deployTargets[intent]}`);
+  core.info(`Infra configured: ${config.infra.configured}`);
   core.info(`Blockers: ${blockers.summary || 'None'}`);
 }
 

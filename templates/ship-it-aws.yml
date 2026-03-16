@@ -1,0 +1,122 @@
+# .ship-it.yml -- AWS Configuration Template
+#
+# Instructions:
+#   1. Copy this file to .ship-it.yml in your app's repo root
+#   2. The `app` section is auto-filled by /make-it (or fill it yourself)
+#   3. Fill in the `infra` section with your AWS account details
+#   4. Customize the `deployment` section for your team
+#
+# See docs/devops-guide.md for detailed instructions.
+
+# APP -- What is being deployed
+# Auto-populated by /make-it. Edit only if needed.
+app:
+  name: ""                          # e.g., "TaskHub"
+  slug: ""                          # e.g., "task-hub"
+  description: ""                   # One-line description
+  stack: ""                         # e.g., "fastapi-nextjs", "nextjs", "express"
+  project_type: ""                  # e.g., "web-app", "api-service"
+  services:
+    - name: backend
+      dockerfile: backend/Dockerfile
+      port: 8000
+      health_check: /health
+      cpu: 512                      # Fargate CPU units
+      memory: 1024                  # Fargate memory in MB
+    - name: frontend
+      dockerfile: frontend/Dockerfile
+      port: 3000
+      health_check: /
+      cpu: 256
+      memory: 512
+  database:
+    engine: postgresql              # postgresql, mysql, none
+    version: "16"
+  auth:
+    provider: oidc                  # oidc, none
+
+# INFRA -- Where and how to deploy
+# Fill this in with your AWS account details.
+infra:
+  provider: aws
+
+  aws:
+    # Account basics
+    # Find your account ID: AWS Console > top-right corner > Account ID
+    region: us-east-1
+    account_id: ""                  # e.g., "123456789012"
+    ecr_registry: ""                # {account_id}.dkr.ecr.{region}.amazonaws.com
+
+    # Networking
+    # Find these in: VPC Console > Your VPC > Subnets
+    # Private subnets: where containers run (no direct internet access)
+    # Public subnets: where the load balancer sits (internet-facing)
+    vpc_id: ""                      # e.g., "vpc-0abc123def456"
+    private_subnets: []             # e.g., ["subnet-abc123", "subnet-def456"]
+    public_subnets: []              # e.g., ["subnet-ghi789", "subnet-jkl012"]
+
+    # ECS / Fargate
+    # Create a cluster: ECS Console > Clusters > Create Cluster
+    # One shared cluster can run many apps.
+    ecs:
+      cluster_name: ""              # e.g., "apps-cluster"
+      execution_role_arn: ""        # IAM > Roles > ecsTaskExecutionRole
+      task_role_arn: ""             # IAM > Roles > ecsTaskRole
+      service_discovery_namespace: ""  # Optional: Cloud Map namespace for service-to-service
+
+    # RDS (only needed if database.engine != none)
+    # These are defaults -- override per-environment in GitHub Actions.
+    rds:
+      instance_class: db.t3.micro   # Dev: db.t3.micro, Prod: db.r6g.large or higher
+      allocated_storage: 20         # GB -- increase for production
+      multi_az: false               # true for production (high availability)
+      backup_retention: 7           # days -- increase for production
+
+    # ALB (Application Load Balancer)
+    # Sits in front of your containers, handles HTTPS termination.
+    alb:
+      certificate_arn: ""           # ACM Console > Certificates > your wildcard cert
+      health_check_path: /health    # Must match app.services[].health_check
+      idle_timeout: 60              # seconds
+
+    # DNS
+    # Your apps will be available at: {slug}.{domain}
+    # e.g., task-hub.apps.example.com
+    dns:
+      hosted_zone_id: ""            # Route53 Console > Hosted Zones
+      domain: ""                    # e.g., "apps.example.com"
+
+    # Secrets
+    # App secrets stored in AWS Secrets Manager.
+    # Pattern: {prefix}/{slug}/{env} (e.g., /ship-it/task-hub/dev)
+    secrets:
+      prefix: /ship-it
+
+# DEPLOYMENT -- How the pipeline behaves
+deployment:
+  # GitHub environment names
+  # Must match: repo Settings > Environments
+  environments:
+    dev: dev
+    # staging: staging              # Uncomment if you use a staging environment
+    production: production
+
+  # Reviewers auto-assigned to production PRs
+  # Use GitHub usernames
+  reviewers: []
+    # - devops-lead
+    # - team-lead
+
+  # Go-live checklist (customize for your org)
+  prerequisites:
+    - "Does this app need users to log in? (SSO / App registration)"
+    - "Does this need a secure web address? (SSL certificate)"
+    - "Who should have access in production? (Permissions / RBAC)"
+    - "Does this need a URL people can visit? (DNS setup)"
+    - "Does this need to talk to internal systems? (Network / firewall)"
+
+  # Shared reusable workflow (if your org centralizes pipelines)
+  # reusable_workflow: "my-org/shared-workflows/.github/workflows/ship-it-pipeline.yml@main"
+
+  strategy: rolling                 # rolling, blue-green, canary
+  rollback: true

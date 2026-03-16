@@ -278,23 +278,28 @@ skills/
     SKILL.md                  # Claude Code skill definition (the /ship-it command)
 src/
   index.js                    # Entry point -- routes to interactive or CI mode
+  config-loader.js            # Loads and merges .ship-it.yml + app-context.json + auto-detect
   intent.js                   # Intent classification (experiment/shareable/prod-ready)
   blocker-scan.js             # Scans for merge conflicts, failing checks, issues
-  pr-builder.js               # Creates/updates PRs with labels and checklists
-  prompt-flow.js              # Interactive CLI flow orchestration
-  workflow-gen.js              # GitHub Actions workflow generation
+  pr-builder.js               # Creates/updates PRs with app details, infra status, checklists
+  prompt-flow.js              # Interactive CLI flow (skips questions when make-it context exists)
+  workflow-gen.js              # Generates AWS/Azure/placeholder workflows from config
   auth-handler.js              # Translates auth errors to plain language
   __tests__/
     auth-handler.test.js
+    config-loader.test.js     # Config merge logic tests
     intent.test.js
 templates/
-  ship-it.yml                 # Example .ship-it.yml configuration (3 sections)
+  ship-it.yml                 # Generic .ship-it.yml template (3 sections)
+  ship-it-aws.yml             # AWS-specific template with field-by-field instructions
+  ship-it-azure.yml           # Azure-specific template with field-by-field instructions
   checklist-prod.md           # Production go-live checklist template
   pr-description.md           # PR description template
-  workflow.yml                # GitHub Actions workflow template
+  workflow.yml                # GitHub Actions workflow template (fallback)
 docs/
+  devops-guide.md             # DevOps onboarding guide (how to fill in .ship-it.yml)
   handoff.md                  # make-it to ship-it merge logic
-  devops_skill.md             # Detailed skill documentation
+  devops_skill.md             # Detailed skill specification
 action.yml                    # GitHub Action definition
 package.json                  # Node.js dependencies
 ```

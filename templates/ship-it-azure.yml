@@ -1,0 +1,130 @@
+# .ship-it.yml -- Azure Configuration Template
+#
+# Instructions:
+#   1. Copy this file to .ship-it.yml in your app's repo root
+#   2. The `app` section is auto-filled by /make-it (or fill it yourself)
+#   3. Fill in the `infra` section with your Azure subscription details
+#   4. Customize the `deployment` section for your team
+#
+# See docs/devops-guide.md for detailed instructions.
+
+# APP -- What is being deployed
+# Auto-populated by /make-it. Edit only if needed.
+app:
+  name: ""                          # e.g., "TaskHub"
+  slug: ""                          # e.g., "task-hub"
+  description: ""                   # One-line description
+  stack: ""                         # e.g., "fastapi-nextjs", "nextjs", "express"
+  project_type: ""                  # e.g., "web-app", "api-service"
+  services:
+    - name: backend
+      dockerfile: backend/Dockerfile
+      port: 8000
+      health_check: /health
+      cpu: 512
+      memory: 1024
+    - name: frontend
+      dockerfile: frontend/Dockerfile
+      port: 3000
+      health_check: /
+      cpu: 256
+      memory: 512
+  database:
+    engine: postgresql              # postgresql, mysql, none
+    version: "16"
+  auth:
+    provider: oidc                  # oidc, none
+
+# INFRA -- Where and how to deploy
+# Fill this in with your Azure subscription details.
+infra:
+  provider: azure
+
+  azure:
+    # Subscription
+    # Find this: Azure Portal > Subscriptions
+    subscription_id: ""             # e.g., "12345678-abcd-efgh-ijkl-123456789012"
+    tenant_id: ""                   # e.g., "12345678-abcd-efgh-ijkl-123456789012"
+
+    # Resource group naming
+    # Apps get per-environment resource groups: {prefix}-{slug}-{env}
+    # e.g., rg-task-hub-dev, rg-task-hub-prod
+    resource_group_prefix: "rg"
+
+    # Container Registry
+    # Azure Portal > Container Registries
+    # One shared ACR can serve many apps.
+    acr_name: ""                    # e.g., "myorgacr"
+    acr_login_server: ""            # e.g., "myorgacr.azurecr.io"
+
+    # AKS (Azure Kubernetes Service)
+    # Azure Portal > Kubernetes services
+    # One shared cluster can run many apps via namespaces.
+    aks:
+      cluster_name: ""              # e.g., "apps-aks-cluster"
+      resource_group: ""            # e.g., "rg-shared-aks"
+      namespace_prefix: ""          # e.g., "apps" -> apps-{slug}-{env}
+
+    # Networking
+    # Azure Portal > Virtual networks
+    vnet:
+      name: ""                      # e.g., "apps-vnet"
+      resource_group: ""            # e.g., "rg-shared-networking"
+      subnet_name: ""               # e.g., "apps-subnet"
+
+    # Azure Database for PostgreSQL (if database.engine != none)
+    # Flexible Server defaults -- override per-environment.
+    postgres:
+      sku_name: "B_Standard_B1ms"   # Dev: B_Standard_B1ms, Prod: GP_Standard_D4s_v3
+      storage_mb: 32768             # 32 GB -- increase for production
+      ha_mode: "Disabled"           # "ZoneRedundant" for production
+      backup_retention_days: 7      # increase for production
+      geo_redundant_backup: false   # true for production
+
+    # DNS
+    # Azure Portal > DNS zones
+    # Apps will be available at: {slug}.{zone}
+    # e.g., task-hub.apps.example.com
+    dns:
+      zone_name: ""                 # e.g., "apps.example.com"
+      resource_group: ""            # e.g., "rg-shared-dns"
+
+    # Key Vault
+    # App secrets stored in Azure Key Vault.
+    # Pattern: {prefix}-{slug}-{env} (e.g., kv-task-hub-dev)
+    key_vault:
+      prefix: "kv"
+
+    # Application Gateway / Front Door (for HTTPS)
+    app_gateway:
+      name: ""                      # e.g., "apps-appgw"
+      resource_group: ""            # e.g., "rg-shared-appgw"
+      ssl_certificate_name: ""      # e.g., "wildcard-apps-example-com"
+
+# DEPLOYMENT -- How the pipeline behaves
+deployment:
+  # GitHub environment names
+  # Must match: repo Settings > Environments
+  environments:
+    dev: dev
+    # staging: staging              # Uncomment if you use a staging environment
+    production: production
+
+  # Reviewers auto-assigned to production PRs
+  reviewers: []
+    # - devops-lead
+    # - team-lead
+
+  # Go-live checklist (customize for your org)
+  prerequisites:
+    - "Does this app need users to log in? (SSO / App registration)"
+    - "Does this need a secure web address? (SSL certificate)"
+    - "Who should have access in production? (Permissions / RBAC)"
+    - "Does this need a URL people can visit? (DNS setup)"
+    - "Does this need to talk to internal systems? (Network / firewall)"
+
+  # Shared reusable workflow (if your org centralizes pipelines)
+  # reusable_workflow: "my-org/shared-workflows/.github/workflows/ship-it-pipeline.yml@main"
+
+  strategy: rolling                 # rolling, blue-green, canary
+  rollback: true
