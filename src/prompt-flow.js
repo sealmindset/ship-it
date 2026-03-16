@@ -4,6 +4,7 @@ const { createOrUpdatePR } = require('./pr-builder');
 const { ensureWorkflow } = require('./workflow-gen');
 const { loadConfig, generateShipItYml } = require('./config-loader');
 const { generateGitignore, getMissingEntries } = require('./gitignore-gen');
+const { auditDependencies, formatAuditSummary } = require('./dep-audit');
 const { exec } = require('@actions/exec');
 const readline = require('readline');
 const fs = require('fs');
@@ -111,6 +112,23 @@ async function runShipMode({ octokit, owner, repo, workingDir, ask, core }) {
     // Ensure .gitignore exists with critical entries
     await ensureGitignore(workingDir, config.app.stack || config.context.detectedStack);
 
+    // Pre-push security scan: audit dependencies for known vulnerabilities
+    print('Checking your dependencies for known security issues...');
+    let auditResult;
+    try {
+      auditResult = await auditDependencies({ workingDir, log: (msg) => print(msg) });
+      if (auditResult.fixedCount > 0) {
+        print(`Fixed ${auditResult.fixedCount} security ${auditResult.fixedCount === 1 ? 'issue' : 'issues'} in your dependencies.`);
+      } else if (auditResult.vulnCount === 0 && !auditResult.skipped) {
+        print('No known vulnerabilities found.');
+      }
+      if (auditResult.remaining > 0) {
+        print(`Note: ${auditResult.remaining} ${auditResult.remaining === 1 ? 'vulnerability requires' : 'vulnerabilities require'} manual review.`);
+      }
+    } catch {
+      auditResult = { vulnCount: 0, fixedCount: 0, remaining: 0, fixes: [], warnings: [], skipped: true };
+    }
+
     // Branch: if on main, create ship-it/{slug} branch
     let branch = preflight.branch;
     if (branch === 'main' || branch === 'master') {
@@ -129,8 +147,9 @@ async function runShipMode({ octokit, owner, repo, workingDir, ask, core }) {
     await ensureWorkflow({ octokit, owner, repo, branch, config });
 
     // Labels + PR
+    const auditSummary = auditResult ? formatAuditSummary(auditResult) : '';
     const prResult = await createOrUpdatePR({
-      octokit, owner, repo, branch, baseBranch: 'main', intent, appInfo, config
+      octokit, owner, repo, branch, baseBranch: 'main', intent, appInfo, config, auditSummary
     });
 
     // Set outputs

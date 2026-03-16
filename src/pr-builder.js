@@ -21,7 +21,7 @@ const DEFAULT_PREREQUISITES = [
  * Create or update a pull request with intent label,
  * app details, infrastructure status, and prerequisites checklist.
  */
-async function createOrUpdatePR({ octokit, owner, repo, branch, baseBranch, intent, appInfo, config }) {
+async function createOrUpdatePR({ octokit, owner, repo, branch, baseBranch, intent, appInfo, config, auditSummary }) {
   await ensureLabels({ octokit, owner, repo });
 
   const intentLabel = getIntentLabel(intent);
@@ -30,7 +30,7 @@ async function createOrUpdatePR({ octokit, owner, repo, branch, baseBranch, inte
   const existingPR = await findExistingPR({ octokit, owner, repo, branch });
 
   const title = buildTitle({ intent, appInfo, config });
-  const body = buildBody({ intent, appInfo, config });
+  const body = buildBody({ intent, appInfo, config, auditSummary });
 
   let pr;
   if (existingPR) {
@@ -111,7 +111,7 @@ function buildTitle({ intent, appInfo, config }) {
 
 // --- Body ---
 
-function buildBody({ intent, appInfo, config }) {
+function buildBody({ intent, appInfo, config, auditSummary }) {
   const sections = [];
 
   // What this does
@@ -178,6 +178,13 @@ function buildBody({ intent, appInfo, config }) {
     sections.push('⚠️ Pending DevOps infrastructure configuration -- fill in the `infra` section of `.ship-it.yml`');
     sections.push('');
     sections.push('See the [DevOps onboarding guide](https://github.com/sealmindset/ship-it/blob/main/docs/devops-guide.md) for instructions.');
+  }
+
+  // Security audit results (if any vulnerabilities were found)
+  if (auditSummary) {
+    sections.push('');
+    sections.push('## Security audit');
+    sections.push(auditSummary);
   }
 
   // Prerequisites checklist (prod-ready only)
