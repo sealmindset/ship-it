@@ -63,24 +63,53 @@ See [docs/handoff.md](docs/handoff.md) for the full merge logic and [docs/walkth
 
 ### As a Claude Code Skill
 
-1. Clone this repo:
+#### Option A: One-Line Install (recommended)
+
+No clone needed. Just run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sealmindset/ship-it/main/install.sh | bash
+```
+
+This downloads the latest release and installs the skill into `~/.claude/`.
+
+#### Option B: Clone and Install
+
+```bash
+git clone https://github.com/sealmindset/ship-it.git
+cd ship-it
+bash install.sh
+```
+
+#### Option C: Manual Install
 
 ```bash
 git clone https://github.com/sealmindset/ship-it.git ~/.claude/ship-it-skill
-```
-
-2. Copy the skill file into your Claude Code commands directory:
-
-```bash
 mkdir -p ~/.claude/commands
 cp ~/.claude/ship-it-skill/skills/ship-it/SKILL.md ~/.claude/commands/ship-it.md
 ```
 
-3. Verify it's available:
+#### Verify Installation
 
 ```bash
 claude
 # Then type /ship-it
+```
+
+#### Updating
+
+Update from the terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sealmindset/ship-it/main/install.sh | bash
+```
+
+Or if you have the repo cloned:
+
+```bash
+cd ~/path/to/ship-it
+git pull
+bash install.sh
 ```
 
 ### As a GitHub Action
