@@ -34,8 +34,9 @@ Best for: Teams where apps have different infrastructure requirements.
 
 Copy the matching template into your org's config repo or directly into app repos:
 
-- **AWS**: `templates/ship-it-aws.yml`
-- **Azure**: `templates/ship-it-azure.yml`
+- **AWS (ECS)**: `templates/ship-it-aws.yml`
+- **Azure (AKS)**: `templates/ship-it-azure.yml`
+- **Azure (Container Apps)**: `templates/ship-it-azure-aca.yml` -- uses org reusable workflows
 
 ### 2. Fill in the infrastructure section
 
@@ -146,6 +147,72 @@ my-org/shared-workflows/.github/workflows/ship-it-pipeline.yml
 
 Then set `deployment.reusable_workflow` in `.ship-it.yml`. Each app gets a thin caller workflow that references your shared pipeline. This gives you centralized control over the deployment process.
 
+### Azure Container Apps (ACA) -- Reusable Workflow Pattern
+
+If your org uses Azure Container Apps with shared CI/CD reusable workflows, use the ACA template instead of the standard Azure template:
+
+```bash
+cp templates/ship-it-azure-aca.yml .ship-it.yml
+```
+
+Key differences from the standard Azure (AKS) template:
+
+| Aspect | Azure AKS | Azure ACA |
+|--------|-----------|-----------|
+| Template | `ship-it-azure.yml` | `ship-it-azure-aca.yml` |
+| `infra.deploy_target` | (not set -- defaults to AKS) | `aca` |
+| Deploy mechanism | `kubectl set image` | Reusable CI/CD workflows |
+| Workflow files generated | 1 (`ship-it.yml`) | 3 (`container-app-ci.yml`, `container-app-cd.yml`, `pr_lint.yaml`) |
+| Terraform | Inline in workflow | Handled by reusable workflow |
+| Config needed | subscription_id, acr_name, AKS details | app_path, app_name, app_type, container_app_name |
+
+The ACA template uses `deployment.reusable_workflows` (plural) with named keys:
+
+```yaml
+deployment:
+  reusable_workflows:
+    ci: "YourOrg/container-app-ci-gha-workflow/.github/workflows/container-app-ci.yaml@v1"
+    cd: "YourOrg/container-app-cd-gha-workflow/.github/workflows/container-app-cd.yaml@v1"
+    pr_lint: "YourOrg/cicd-workflows/.github/workflows/pr_lint.yml@v1"
+    pr_validate: "YourOrg/pull-request-external-task-validation/.github/workflows/pr_external_validation.yaml@v1"
+```
+
+The generated workflows match the pattern used by existing apps (like capacity-planner) so DevOps doesn't need to learn a new deployment model.
+
+#### ACA-specific fields
+
+| Field | Where to find it | Example |
+|-------|-----------------|---------|
+| `azure.app_path` | Directory containing Dockerfile | `./apps/typescript`, `.` |
+| `azure.app_type` | Build toolchain | `node`, `python`, `java` |
+| `azure.node_version` | Node.js version (if app_type is node) | `20` |
+| `azure.first_env` | First environment to deploy | `dev` |
+| `azure.container_app_name` | Must match Terraform `app_name` variable | `capacity-planner` |
+
+#### ACA repo structure
+
+The repo should follow this structure for Terraform:
+
+```
+terraform/              # Shared modules
+  container_app.tf      # Container App module (references org Terraform module)
+  key_vault.tf          # Key Vault + secrets
+  postgresql.tf         # PostgreSQL Flexible Server
+  variables.tf          # All input variables
+  outputs.tf
+env/
+  dev/                  # Dev environment
+    main.tf             # Module call with dev values
+    variables.tf
+    provider.tf         # Azure provider + backend config
+    settings.tf         # Required provider versions
+  prd/                  # Production environment
+    main.tf
+    variables.tf
+    provider.tf
+    settings.tf
+```
+
 ## How It All Connects
 
 ```
@@ -159,9 +226,10 @@ Merges: .ship-it.yml > app-context > auto-detect > defaults
        |
        v
 Generates workflow based on infra section:
-  - infra populated  -> real deploy steps (Docker build, ECR push, ECS deploy)
-  - infra empty      -> placeholder steps ("pending DevOps configuration")
-  - reusable_workflow -> thin caller referencing your shared pipeline
+  - deploy_target: aca -> CI + CD + PR lint (reusable workflow callers)
+  - infra populated    -> real deploy steps (Docker build, ECR/ACR push, ECS/AKS deploy)
+  - infra empty        -> placeholder steps ("pending DevOps configuration")
+  - reusable_workflow  -> thin caller referencing your shared pipeline
        |
        v
 Creates PR with:

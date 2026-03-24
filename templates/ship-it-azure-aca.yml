@@ -1,0 +1,100 @@
+# .ship-it.yml -- Azure Container Apps (ACA) Configuration Template
+#
+# Instructions:
+#   1. Copy this file to .ship-it.yml in your app's repo root
+#   2. The `app` section is auto-filled by /make-it (or fill it yourself)
+#   3. Fill in the `infra` section with your Azure ACA details
+#   4. Customize the `deployment` section for your team
+#
+# This template uses SleepNumberInc's shared reusable workflows for CI/CD.
+# The workflows handle building, scanning, Terraform, and deployment automatically.
+#
+# See docs/devops-guide.md for detailed instructions.
+
+# APP -- What is being deployed
+# Auto-populated by /make-it. Edit only if needed.
+app:
+  name: ""                          # e.g., "Capacity Planner"
+  slug: ""                          # e.g., "capacity-planner"
+  description: ""                   # One-line description
+  stack: ""                         # e.g., "nestjs", "nextjs", "fastapi-nextjs"
+  project_type: ""                  # e.g., "web-app", "api-service"
+  services:
+    - name: app
+      dockerfile: Dockerfile        # Path to Dockerfile relative to app_path
+      port: 3000
+      health_check: /health
+      cpu: "0.5"
+      memory: "1Gi"
+  database:
+    engine: postgresql              # postgresql, mysql, none
+    version: "16"
+  auth:
+    provider: oidc                  # oidc (Entra ID), none
+
+# INFRA -- Where and how to deploy (Azure Container Apps)
+# Fill this in with your Azure subscription details.
+infra:
+  provider: azure
+  deploy_target: aca               # aca (Container Apps) -- NOT aks
+
+  azure:
+    # App path -- directory containing the Dockerfile and application code
+    # Relative to the repo root
+    app_path: "./apps/typescript"     # e.g., ".", "./apps/typescript", "./backend"
+
+    # App type -- determines build toolchain in CI workflow
+    app_type: "node"                  # node, python, java
+
+    # Node version (if app_type is node)
+    node_version: "20"                # e.g., "18", "20", "22"
+
+    # First environment to deploy to
+    # The CI workflow uses this to determine the initial deployment target
+    first_env: "dev"                  # e.g., "dev", "staging"
+
+    # Container App name -- must match the Terraform container_app.tf app_name
+    container_app_name: ""            # e.g., "capacity-planner"
+
+    # Terraform structure
+    # The repo should have:
+    #   terraform/          -- shared modules (container_app.tf, key_vault.tf, etc.)
+    #   env/dev/            -- dev environment config (main.tf, variables.tf, provider.tf)
+    #   env/prd/            -- prod environment config
+    terraform:
+      module_path: "./terraform"      # Path to shared Terraform modules
+      env_path: "./env"               # Path to per-environment configs
+
+# DEPLOYMENT -- How the pipeline behaves
+deployment:
+  # GitHub environment names
+  # Must match: repo Settings > Environments
+  environments:
+    dev: dev
+    # staging: staging              # Uncomment if you use a staging environment
+    production: prd
+
+  # Reusable workflows from your org
+  # These handle the heavy lifting: build, scan, Terraform plan/apply, deploy
+  reusable_workflows:
+    ci: "SleepNumberInc/container-app-ci-gha-workflow/.github/workflows/container-app-ci.yaml@v1"
+    cd: "SleepNumberInc/container-app-cd-gha-workflow/.github/workflows/container-app-cd.yaml@v1"
+    pr_lint: "SleepNumberInc/cicd-workflows/.github/workflows/pr_lint.yml@v1"
+    pr_validate: "SleepNumberInc/pull-request-external-task-validation/.github/workflows/pr_external_validation.yaml@v1"
+
+  # Reviewers auto-assigned to production PRs
+  reviewers: []
+    # - devops-lead
+    # - team-lead
+
+  # Go-live checklist (customize for your org)
+  prerequisites:
+    - "Does this app need users to log in? (SSO / Entra ID App registration)"
+    - "Does this need a secure web address? (SSL certificate + custom domain)"
+    - "Who should have access in production? (Permissions / RBAC)"
+    - "Does this need a URL people can visit? (DNS setup)"
+    - "Does this need to talk to internal systems? (Network / firewall / VNet)"
+    - "Are all secrets stored in Key Vault? (No hardcoded secrets)"
+
+  strategy: rolling
+  rollback: true

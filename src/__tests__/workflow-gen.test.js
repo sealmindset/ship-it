@@ -1,4 +1,4 @@
-const { generateWorkflow } = require('../workflow-gen');
+const { generateWorkflow, generateAcaWorkflows } = require('../workflow-gen');
 
 // --- Helpers to build config objects ---
 
@@ -367,6 +367,141 @@ describe('generateWorkflow', () => {
 
       expect(result).toContain('environment: test-env');
       expect(result).toContain('name: release');
+    });
+  });
+
+  describe('Azure ACA with reusable workflows', () => {
+    const acaConfig = makeConfig({
+      app: { slug: 'capacity-planner' },
+      infra: {
+        provider: 'azure',
+        deployTarget: 'aca',
+        azure: {
+          app_path: './apps/typescript',
+          app_type: 'node',
+          node_version: '20',
+          first_env: 'dev',
+          container_app_name: 'capacity-planner',
+        },
+      },
+      deployment: {
+        environments: { dev: 'dev', production: 'prd' },
+        reusableWorkflows: {
+          ci: 'SleepNumberInc/container-app-ci-gha-workflow/.github/workflows/container-app-ci.yaml@v1',
+          cd: 'SleepNumberInc/container-app-cd-gha-workflow/.github/workflows/container-app-cd.yaml@v1',
+          pr_lint: 'SleepNumberInc/cicd-workflows/.github/workflows/pr_lint.yml@v1',
+          pr_validate: 'SleepNumberInc/pull-request-external-task-validation/.github/workflows/pr_external_validation.yaml@v1',
+        },
+      },
+    });
+
+    test('returns object with files array', () => {
+      const result = generateWorkflow(acaConfig);
+      expect(result).toHaveProperty('files');
+      expect(Array.isArray(result.files)).toBe(true);
+    });
+
+    test('generates CI, CD, and PR lint workflows', () => {
+      const result = generateWorkflow(acaConfig);
+      const paths = result.files.map(f => f.path);
+      expect(paths).toContain('.github/workflows/container-app-ci.yml');
+      expect(paths).toContain('.github/workflows/container-app-cd.yml');
+      expect(paths).toContain('.github/workflows/pr_lint.yaml');
+    });
+
+    test('CI workflow uses reusable CI workflow', () => {
+      const result = generateWorkflow(acaConfig);
+      const ci = result.files.find(f => f.path.includes('ci.yml'));
+      expect(ci.content).toContain('uses: SleepNumberInc/container-app-ci-gha-workflow');
+      expect(ci.content).toContain("app_name: 'capacity-planner'");
+      expect(ci.content).toContain("app_path: './apps/typescript'");
+      expect(ci.content).toContain("app_type: 'node'");
+      expect(ci.content).toContain("node_version: '20'");
+      expect(ci.content).toContain("first_env: 'dev'");
+      expect(ci.content).toContain('secrets: inherit');
+    });
+
+    test('CD workflow uses reusable CD workflow', () => {
+      const result = generateWorkflow(acaConfig);
+      const cd = result.files.find(f => f.path.includes('cd.yml'));
+      expect(cd.content).toContain('uses: SleepNumberInc/container-app-cd-gha-workflow');
+      expect(cd.content).toContain("app_name: 'capacity-planner'");
+      expect(cd.content).toContain("app_path: './apps/typescript'");
+      expect(cd.content).toContain('on:\n  deployment:');
+      expect(cd.content).toContain('secrets: inherit');
+    });
+
+    test('CD workflow has actor gate', () => {
+      const result = generateWorkflow(acaConfig);
+      const cd = result.files.find(f => f.path.includes('cd.yml'));
+      expect(cd.content).toContain('SleepNumberDevOps');
+      expect(cd.content).toContain('clouddevopsdeploymentreadwrite[bot]');
+    });
+
+    test('PR lint uses org reusable workflows', () => {
+      const result = generateWorkflow(acaConfig);
+      const lint = result.files.find(f => f.path.includes('pr_lint'));
+      expect(lint.content).toContain('uses: SleepNumberInc/cicd-workflows');
+      expect(lint.content).toContain('uses: SleepNumberInc/pull-request-external-task-validation');
+    });
+
+    test('does not contain AKS or AWS steps', () => {
+      const result = generateWorkflow(acaConfig);
+      const allContent = result.files.map(f => f.content).join('\n');
+      expect(allContent).not.toContain('kubectl');
+      expect(allContent).not.toContain('aws ecs');
+      expect(allContent).not.toContain('amazon-ecr');
+      expect(allContent).not.toContain('AKS_CLUSTER');
+    });
+
+    test('skips PR lint when no pr_lint workflow configured', () => {
+      const config = makeConfig({
+        app: { slug: 'myapp' },
+        infra: {
+          provider: 'azure',
+          deployTarget: 'aca',
+          azure: { container_app_name: 'myapp', app_path: '.' },
+        },
+        deployment: {
+          environments: { dev: 'dev', production: 'prd' },
+          reusableWorkflows: {
+            ci: 'org/ci-repo/.github/workflows/ci.yaml@v1',
+            cd: 'org/cd-repo/.github/workflows/cd.yaml@v1',
+          },
+        },
+      });
+
+      const result = generateWorkflow(config);
+      const paths = result.files.map(f => f.path);
+      expect(paths).toHaveLength(2);
+      expect(paths).not.toContain('.github/workflows/pr_lint.yaml');
+    });
+
+    test('omits node_version for python app_type', () => {
+      const config = makeConfig({
+        app: { slug: 'pyapp' },
+        infra: {
+          provider: 'azure',
+          deployTarget: 'aca',
+          azure: {
+            container_app_name: 'pyapp',
+            app_path: '.',
+            app_type: 'python',
+          },
+        },
+        deployment: {
+          environments: { dev: 'dev', production: 'prd' },
+          reusableWorkflows: {
+            ci: 'org/ci/.github/workflows/ci.yaml@v1',
+            cd: 'org/cd/.github/workflows/cd.yaml@v1',
+          },
+        },
+      });
+
+      const result = generateWorkflow(config);
+      const ci = result.files.find(f => f.path.includes('ci.yml'));
+      expect(ci.content).toContain("app_type: 'python'");
+      expect(ci.content).not.toContain('node_version');
     });
   });
 });

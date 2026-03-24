@@ -243,6 +243,18 @@ If only `app` is present (no `infra`), `/ship-it` creates the PR but marks deplo
 
 See [templates/ship-it.yml](templates/ship-it.yml) for the full template with comments.
 
+### Azure Container Apps (ACA) Deployment
+
+For organizations using Azure Container Apps with shared reusable workflows, use the ACA template:
+
+```bash
+cp templates/ship-it-azure-aca.yml .ship-it.yml
+```
+
+This generates separate CI and CD workflow files that call your org's shared reusable workflows (e.g., `container-app-ci-gha-workflow` and `container-app-cd-gha-workflow`), matching the pattern used by DevOps teams. Set `infra.deploy_target: aca` in your `.ship-it.yml` to enable this mode.
+
+See [templates/ship-it-azure-aca.yml](templates/ship-it-azure-aca.yml) for the full ACA template.
+
 ### Action Inputs
 
 | Input | Required | Default | Description |
@@ -323,7 +335,8 @@ src/
 templates/
   ship-it.yml                 # Generic .ship-it.yml template (3 sections)
   ship-it-aws.yml             # AWS-specific template with field-by-field instructions
-  ship-it-azure.yml           # Azure-specific template with field-by-field instructions
+  ship-it-azure.yml           # Azure AKS template with field-by-field instructions
+  ship-it-azure-aca.yml       # Azure Container Apps template (reusable workflow pattern)
   checklist-prod.md           # Production go-live checklist template
   pr-description.md           # PR description template
   workflow.yml                # GitHub Actions workflow template (fallback)

@@ -235,6 +235,9 @@ function mergeConfig({ shipItYml, appContext, makeItState, detected }) {
       config.infra.provider = infra.provider;
       config.infra.configured = isInfraConfigured(infra);
 
+      // Deploy target: aca, aks, ecs, etc.
+      if (infra.deploy_target) config.infra.deployTarget = infra.deploy_target;
+
       // Pass through the full provider-specific config
       if (infra.aws) config.infra.aws = infra.aws;
       if (infra.azure) config.infra.azure = infra.azure;
@@ -247,6 +250,7 @@ function mergeConfig({ shipItYml, appContext, makeItState, detected }) {
     if (deploy.reviewers) config.deployment.reviewers = deploy.reviewers;
     if (deploy.prerequisites) config.deployment.prerequisites = deploy.prerequisites;
     if (deploy.reusable_workflow) config.deployment.reusableWorkflow = deploy.reusable_workflow;
+    if (deploy.reusable_workflows) config.deployment.reusableWorkflows = deploy.reusable_workflows;
     if (deploy.strategy) config.deployment.strategy = deploy.strategy;
     if (deploy.rollback !== undefined) config.deployment.rollback = deploy.rollback;
   }
@@ -265,7 +269,11 @@ function isInfraConfigured(infra) {
   }
 
   if (infra.provider === 'azure' && infra.azure) {
-    // Must have at minimum: subscription_id and acr_name
+    // ACA: needs container_app_name (reusable workflows handle the rest)
+    if (infra.deploy_target === 'aca') {
+      return !!(infra.azure.container_app_name);
+    }
+    // AKS: needs subscription_id and acr_name
     return !!(infra.azure.subscription_id && infra.azure.acr_name);
   }
 
@@ -325,8 +333,9 @@ function generateShipItYml(config) {
   lines.push('');
   lines.push('# INFRA -- Pending DevOps configuration');
   lines.push('# Copy your org\'s infra template from:');
-  lines.push('#   templates/ship-it-aws.yml  (AWS)');
-  lines.push('#   templates/ship-it-azure.yml (Azure)');
+  lines.push('#   templates/ship-it-aws.yml       (AWS ECS)');
+  lines.push('#   templates/ship-it-azure.yml     (Azure AKS)');
+  lines.push('#   templates/ship-it-azure-aca.yml (Azure Container Apps)');
   lines.push('infra:');
   lines.push('  provider: ""');
   lines.push('');
