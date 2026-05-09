@@ -49,6 +49,73 @@ Also in a SINGLE separate tool call, detect the project type:
 ls package.json requirements.txt pyproject.toml go.mod Cargo.toml Dockerfile docker-compose.yml 2>/dev/null
 ```
 
+### Dependency safety check (three layers)
+
+Dependency safety is a pre-push concern -- fix locally BEFORE code reaches GitHub.
+Run these three layers in order. Each layer catches what the previous one missed.
+
+**Layer 1: Local audit (catches known vulnerabilities in installed packages)**
+
+Run in a SINGLE tool call, based on detected stack:
+
+```
+# npm projects (for each directory with a package.json)
+cd frontend && npm audit --json 2>/dev/null | head -100; cd ..
+cd backend && npm audit --json 2>/dev/null | head -100; cd ..
+
+# pip projects (for each directory with a requirements.txt)
+pip-audit -r backend/requirements.txt --format json 2>/dev/null || \
+  pip-audit -r requirements.txt --format json 2>/dev/null || true
+pip-audit -r interview-simulator/requirements.txt --format json 2>/dev/null || true
+```
+
+If `pip-audit` is not installed, install it silently: `pip install pip-audit 2>/dev/null`
+If `npm` is not available for a Python-only project, skip the npm checks.
+
+**Layer 2: Auto-fix (apply available patches)**
+
+If Layer 1 found vulnerabilities with available fixes:
+
+```
+# npm: auto-fix non-breaking updates
+cd frontend && npm audit fix 2>/dev/null; cd ..
+
+# pip: update specific vulnerable packages to their patched versions
+# For each vulnerable package with a fix version from pip-audit output:
+# Update the version pin in the relevant requirements.txt file
+# Then: pip install -r requirements.txt 2>/dev/null (to verify it installs cleanly)
+```
+
+For `npm audit fix`:
+- If `npm audit fix` resolves all issues, continue silently.
+- If `npm audit fix --force` would be needed (breaking changes), do NOT run it.
+  Note the remaining issues for the PR body instead.
+
+For pip:
+- Update the version pin in `requirements.txt` to `>=FIXED_VERSION`
+- Verify the package installs without errors
+- If it breaks other dependencies, revert and note in PR body
+
+Stage and commit any fixes: `git add -A && git commit -m "Apply safety patches" 2>/dev/null`
+
+**Layer 3: Dependabot check (final safety net -- catches anything already flagged on the remote)**
+
+Only runs if a GitHub remote exists. This catches alerts from PREVIOUS pushes that may
+not have been addressed yet.
+
+```
+REMOTE_URL=$(git remote get-url origin 2>/dev/null) && \
+OWNER_REPO=$(echo "$REMOTE_URL" | sed -E 's#.*[:/]([^/]+/[^/]+?)(\.git)?$#\1#') && \
+gh api "repos/${OWNER_REPO}/dependabot/alerts" --jq '.[] | select(.state=="open") | "#\(.number) \(.security_advisory.severity) | \(.dependency.package.name)@\(.dependency.manifest_path) | fix: \(.security_advisory.vulnerabilities[0].first_patched_version.identifier // "no fix")"' 2>/dev/null || true
+```
+
+If Dependabot alerts exist that were NOT already fixed by Layer 2:
+- Fix them using the same approach (update version pins, commit silently)
+- Unfixable alerts ("no fix"): add to the PR body "Pending safety updates" section
+
+**If any layer fails or is unavailable:** Skip it silently and move to the next layer.
+Never block the user. The layers are additive -- each one adds confidence, but none is required.
+
 ### make-it context detection
 
 If `app-context.json` exists, this app was built by /make-it. Extract:
@@ -97,6 +164,7 @@ If `.ship-it.yml` exists, read all three sections:
 | `gh` not installed | "I need the GitHub CLI. Install it with `brew install gh` (Mac) or `sudo apt install gh` (Linux), then try again." |
 | Open PR already exists | Switch to **RE-RUN MODE** (see below) |
 | Nothing new to ship | "Your code is already live — there's nothing new to ship. Make some changes and run /ship-it again." |
+| Dependency alerts API inaccessible | (Skip silently — do not mention to user) |
 
 If everything is fine, say ONE line:
 > Shipping your code now...
@@ -221,6 +289,13 @@ Generate the PR body with these sections:
 ## Infrastructure status
 {If infra section exists: "DevOps infrastructure configured ✓"}
 {If infra section is empty: "⚠️ Pending DevOps infrastructure configuration — fill in the `infra` section of `.ship-it.yml`"}
+
+{If unfixable dependency alerts were found during preflight:}
+## Pending safety updates
+The following dependencies have known advisories without available fixes yet:
+- {package} ({severity level})
+
+These are monitored and will be patched when updates are released.
 
 {If intent is prod-ready, append the prerequisites checklist}
 
